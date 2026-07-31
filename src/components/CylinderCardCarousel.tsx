@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { Hand } from 'lucide-react';
 
 const CARDS_DATA = [
   {
@@ -62,15 +63,31 @@ export const CylinderCardCarousel = () => {
   const progress = useRef<number>(0);
   const mouse = useRef({ x: 0, y: 0, targetX: 0, targetY: 0 });
 
+  // Touch gesture tracking
+  const touchState = useRef({
+    isDragging: false,
+    startX: 0,
+    startY: 0,
+    startProgress: 0,
+    lastX: 0,
+    velocity: 0,
+    lastTime: 0
+  });
+
   const [metrics, setMetrics] = useState({
     cardW: 340,
     cardH: 215,
   });
 
+  // Touch & Mouse event listeners
   useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    // Mouse handlers
     const handleMouseMove = (e: MouseEvent) => {
-      if (!containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
+      if (touchState.current.isDragging) return;
+      const rect = el.getBoundingClientRect();
       const rx = (e.clientX - (rect.left + rect.width / 2)) / (rect.width / 2);
       const ry = (e.clientY - (rect.top + rect.height / 2)) / (rect.height / 2);
       mouse.current.targetX = Math.max(-1, Math.min(1, rx));
@@ -82,25 +99,89 @@ export const CylinderCardCarousel = () => {
       mouse.current.targetY = 0;
     };
 
-    const el = containerRef.current;
-    if (el) {
-      el.addEventListener('mousemove', handleMouseMove);
-      el.addEventListener('mouseleave', handleMouseLeave);
-    }
+    // Touch handlers for mobile screen interaction
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      const touch = e.touches[0];
+      const rect = el.getBoundingClientRect();
+
+      touchState.current.isDragging = true;
+      touchState.current.startX = touch.clientX;
+      touchState.current.startY = touch.clientY;
+      touchState.current.lastX = touch.clientX;
+      touchState.current.lastTime = performance.now();
+      touchState.current.startProgress = progress.current;
+      touchState.current.velocity = 0;
+
+      const rx = (touch.clientX - (rect.left + rect.width / 2)) / (rect.width / 2);
+      const ry = (touch.clientY - (rect.top + rect.height / 2)) / (rect.height / 2);
+      mouse.current.targetX = Math.max(-1, Math.min(1, rx));
+      mouse.current.targetY = Math.max(-1, Math.min(1, ry));
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!touchState.current.isDragging || e.touches.length !== 1) return;
+      const touch = e.touches[0];
+      const deltaX = touch.clientX - touchState.current.startX;
+      const deltaY = touch.clientY - touchState.current.startY;
+
+      // Allow vertical page scrolling if swipe is mostly vertical
+      if (Math.abs(deltaY) > Math.abs(deltaX) * 1.5 && Math.abs(deltaX) < 10) {
+        return;
+      }
+
+      // Drag carousel progress based on finger movement
+      const dragFactor = metrics.cardW * 1.1;
+      progress.current = touchState.current.startProgress - (deltaX / dragFactor);
+
+      // Track velocity for smooth swipe release inertia
+      const now = performance.now();
+      const dt = Math.max(1, now - touchState.current.lastTime);
+      const moveDx = touch.clientX - touchState.current.lastX;
+      touchState.current.velocity = -moveDx / dt;
+      touchState.current.lastX = touch.clientX;
+      touchState.current.lastTime = now;
+
+      // Update 3D parallax tilt according to finger touch position
+      const rect = el.getBoundingClientRect();
+      const rx = (touch.clientX - (rect.left + rect.width / 2)) / (rect.width / 2);
+      const ry = (touch.clientY - (rect.top + rect.height / 2)) / (rect.height / 2);
+      mouse.current.targetX = Math.max(-1, Math.min(1, rx));
+      mouse.current.targetY = Math.max(-1, Math.min(1, ry));
+    };
+
+    const handleTouchEnd = () => {
+      touchState.current.isDragging = false;
+      mouse.current.targetX = 0;
+      mouse.current.targetY = 0;
+    };
+
+    el.addEventListener('mousemove', handleMouseMove);
+    el.addEventListener('mouseleave', handleMouseLeave);
+    el.addEventListener('touchstart', handleTouchStart, { passive: true });
+    el.addEventListener('touchmove', handleTouchMove, { passive: true });
+    el.addEventListener('touchend', handleTouchEnd);
+    el.addEventListener('touchcancel', handleTouchEnd);
 
     return () => {
-      if (el) {
-        el.removeEventListener('mousemove', handleMouseMove);
-        el.removeEventListener('mouseleave', handleMouseLeave);
-      }
+      el.removeEventListener('mousemove', handleMouseMove);
+      el.removeEventListener('mouseleave', handleMouseLeave);
+      el.removeEventListener('touchstart', handleTouchStart);
+      el.removeEventListener('touchmove', handleTouchMove);
+      el.removeEventListener('touchend', handleTouchEnd);
+      el.removeEventListener('touchcancel', handleTouchEnd);
     };
-  }, []);
+  }, [metrics]);
 
   useEffect(() => {
     const handleResize = () => {
       const w = window.innerWidth;
       let cardW = Math.round(w * 0.16 + 140);
-      cardW = Math.min(350, Math.max(210, cardW));
+      if (w < 640) {
+        cardW = Math.min(300, Math.max(195, Math.round(w * 0.62)));
+      } else {
+        cardW = Math.min(350, Math.max(210, cardW));
+      }
       const cardH = Math.round(cardW / 1.5925);
       setMetrics({ cardW, cardH });
     };
@@ -111,13 +192,21 @@ export const CylinderCardCarousel = () => {
   }, []);
 
   const renderLoop = () => {
-    progress.current += 0.0016; 
+    // If not dragging with finger, apply auto slow scroll + velocity momentum decay
+    if (!touchState.current.isDragging) {
+      if (Math.abs(touchState.current.velocity) > 0.001) {
+        progress.current += touchState.current.velocity * 0.6;
+        touchState.current.velocity *= 0.92;
+      } else {
+        progress.current += 0.0016;
+      }
+    }
 
     mouse.current.x += (mouse.current.targetX - mouse.current.x) * 0.08;
     mouse.current.y += (mouse.current.targetY - mouse.current.y) * 0.08;
 
     const cards = cardsRefs.current;
-    const h = containerRef.current ? containerRef.current.clientHeight : 560;
+    const h = containerRef.current ? containerRef.current.clientHeight : 480;
     const { cardH } = metrics;
 
     const continuousProgress = progress.current;
@@ -224,11 +313,19 @@ export const CylinderCardCarousel = () => {
   const thicknessLayers = [-1.47, -0.73, 0, 0.73, 1.47];
 
   return (
-    <div ref={containerRef} className="relative w-full h-[540px] sm:h-[600px] bg-[#00082C] rounded-3xl overflow-hidden shadow-2xl flex items-center justify-center select-none border border-white/10 my-10">
-      
+    <div
+      ref={containerRef}
+      className="relative w-full h-[460px] sm:h-[540px] md:h-[600px] bg-[#00082C] rounded-3xl overflow-hidden shadow-2xl flex items-center justify-center select-none border border-white/10 my-6 sm:my-10 touch-pan-y cursor-grab active:cursor-grabbing"
+    >
       {/* Background Ambient Glow */}
       <div className="absolute inset-0 bg-gradient-to-b from-[#001A38] via-[#00082C] to-[#000418] pointer-events-none" />
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[350px] bg-[#D72426]/15 blur-[120px] rounded-full pointer-events-none" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[320px] sm:w-[600px] h-[220px] sm:h-[350px] bg-[#D72426]/15 blur-[90px] sm:blur-[120px] rounded-full pointer-events-none" />
+
+      {/* Touch Swipe Hint Badge for Mobile Users */}
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-white/10 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/15 flex items-center gap-2 text-white/80 text-[11px] font-semibold pointer-events-none shadow-md">
+        <Hand className="w-3.5 h-3.5 text-[#D72426] animate-pulse" />
+        <span>Смахните пальцем влево или вправо</span>
+      </div>
 
       <div
         className="relative w-full h-full flex items-center justify-center pointer-events-none z-10"
