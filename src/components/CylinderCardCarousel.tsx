@@ -33,17 +33,7 @@ const CARDS_DATA = [
     color: '#AE2323'
   },
   {
-    id: 'visa_platinum',
-    name: 'VISA PLATINUM',
-    image: '/cards/visa_platinum.jpg',
-    videoSrc: 'https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260423_161253_c72b1869-400f-45ed-ac0c-52f68c2ed5bd.mp4',
-    number: '5375 8891 2234 7713',
-    holder: 'ТИМУР АЛИЕВ',
-    cvv: '255',
-    color: '#D72426'
-  },
-  {
-    id: 'visa_gold_2',
+    id: 'visa_gold_premium',
     name: 'VISA GOLD ПРЕМИУМ',
     image: '/cards/visa_gold.png',
     videoSrc: 'https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260418_115655_b4d9cd77-feed-43cd-a198-af78ebdf1f7a.mp4',
@@ -63,7 +53,7 @@ export const CylinderCardCarousel = () => {
   const progress = useRef<number>(0);
   const mouse = useRef({ x: 0, y: 0, targetX: 0, targetY: 0 });
 
-  // Touch gesture tracking
+  // Touch gesture tracking with smooth inertia damping
   const touchState = useRef({
     isDragging: false,
     startX: 0,
@@ -99,7 +89,7 @@ export const CylinderCardCarousel = () => {
       mouse.current.targetY = 0;
     };
 
-    // Touch handlers for mobile screen interaction
+    // Smooth Touch handlers for mobile screens
     const handleTouchStart = (e: TouchEvent) => {
       if (e.touches.length !== 1) return;
       const touch = e.touches[0];
@@ -115,8 +105,8 @@ export const CylinderCardCarousel = () => {
 
       const rx = (touch.clientX - (rect.left + rect.width / 2)) / (rect.width / 2);
       const ry = (touch.clientY - (rect.top + rect.height / 2)) / (rect.height / 2);
-      mouse.current.targetX = Math.max(-1, Math.min(1, rx));
-      mouse.current.targetY = Math.max(-1, Math.min(1, ry));
+      mouse.current.targetX = Math.max(-1, Math.min(1, rx * 0.5));
+      mouse.current.targetY = Math.max(-1, Math.min(1, ry * 0.5));
     };
 
     const handleTouchMove = (e: TouchEvent) => {
@@ -125,29 +115,30 @@ export const CylinderCardCarousel = () => {
       const deltaX = touch.clientX - touchState.current.startX;
       const deltaY = touch.clientY - touchState.current.startY;
 
-      // Allow vertical page scrolling if swipe is mostly vertical
-      if (Math.abs(deltaY) > Math.abs(deltaX) * 1.5 && Math.abs(deltaX) < 10) {
+      // Allow vertical page scrolling if swipe is vertical
+      if (Math.abs(deltaY) > Math.abs(deltaX) * 1.5 && Math.abs(deltaX) < 15) {
         return;
       }
 
-      // Drag carousel progress based on finger movement
-      const dragFactor = metrics.cardW * 1.1;
+      // Smooth drag factor (increased to 3.5x card width for ultra-smooth control)
+      const dragFactor = metrics.cardW * 3.5;
       progress.current = touchState.current.startProgress - (deltaX / dragFactor);
 
-      // Track velocity for smooth swipe release inertia
+      // Smooth velocity tracking with low pass filtering
       const now = performance.now();
       const dt = Math.max(1, now - touchState.current.lastTime);
       const moveDx = touch.clientX - touchState.current.lastX;
-      touchState.current.velocity = -moveDx / dt;
+      const instantVelocity = -moveDx / dt;
+      touchState.current.velocity = touchState.current.velocity * 0.5 + instantVelocity * 0.5;
       touchState.current.lastX = touch.clientX;
       touchState.current.lastTime = now;
 
-      // Update 3D parallax tilt according to finger touch position
+      // Subtly update 3D tilt according to finger touch position
       const rect = el.getBoundingClientRect();
       const rx = (touch.clientX - (rect.left + rect.width / 2)) / (rect.width / 2);
       const ry = (touch.clientY - (rect.top + rect.height / 2)) / (rect.height / 2);
-      mouse.current.targetX = Math.max(-1, Math.min(1, rx));
-      mouse.current.targetY = Math.max(-1, Math.min(1, ry));
+      mouse.current.targetX = Math.max(-1, Math.min(1, rx * 0.5));
+      mouse.current.targetY = Math.max(-1, Math.min(1, ry * 0.5));
     };
 
     const handleTouchEnd = () => {
@@ -178,7 +169,7 @@ export const CylinderCardCarousel = () => {
       const w = window.innerWidth;
       let cardW = Math.round(w * 0.16 + 140);
       if (w < 640) {
-        cardW = Math.min(300, Math.max(195, Math.round(w * 0.62)));
+        cardW = Math.min(290, Math.max(190, Math.round(w * 0.60)));
       } else {
         cardW = Math.min(350, Math.max(210, cardW));
       }
@@ -192,18 +183,18 @@ export const CylinderCardCarousel = () => {
   }, []);
 
   const renderLoop = () => {
-    // If not dragging with finger, apply auto slow scroll + velocity momentum decay
+    // Smooth momentum decay after touch release
     if (!touchState.current.isDragging) {
-      if (Math.abs(touchState.current.velocity) > 0.001) {
-        progress.current += touchState.current.velocity * 0.6;
-        touchState.current.velocity *= 0.92;
+      if (Math.abs(touchState.current.velocity) > 0.0001) {
+        progress.current += touchState.current.velocity * 0.08;
+        touchState.current.velocity *= 0.85;
       } else {
-        progress.current += 0.0016;
+        progress.current += 0.0008; // Smooth, gentle auto-scroll
       }
     }
 
-    mouse.current.x += (mouse.current.targetX - mouse.current.x) * 0.08;
-    mouse.current.y += (mouse.current.targetY - mouse.current.y) * 0.08;
+    mouse.current.x += (mouse.current.targetX - mouse.current.x) * 0.06;
+    mouse.current.y += (mouse.current.targetY - mouse.current.y) * 0.06;
 
     const cards = cardsRefs.current;
     const h = containerRef.current ? containerRef.current.clientHeight : 480;
@@ -228,7 +219,7 @@ export const CylinderCardCarousel = () => {
       const absOffset = Math.abs(offset);
       const sign = Math.sign(offset);
 
-      if (absOffset > 3.0) {
+      if (absOffset > 2.8) {
         card.style.visibility = 'hidden';
         continue;
       } else {
@@ -284,8 +275,8 @@ export const CylinderCardCarousel = () => {
       const localCardRotation = -sign * rot;
       const centerFactor = Math.max(0, 1 - absOffset);
 
-      const maxTiltY = 15;
-      const maxTiltX = 12;
+      const maxTiltY = 12;
+      const maxTiltX = 10;
 
       const activeTiltX = -mouse.current.y * maxTiltX * centerFactor;
       const activeTiltY = mouse.current.x * maxTiltY * centerFactor;
@@ -321,10 +312,10 @@ export const CylinderCardCarousel = () => {
       <div className="absolute inset-0 bg-gradient-to-b from-[#001A38] via-[#00082C] to-[#000418] pointer-events-none" />
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[320px] sm:w-[600px] h-[220px] sm:h-[350px] bg-[#D72426]/15 blur-[90px] sm:blur-[120px] rounded-full pointer-events-none" />
 
-      {/* Touch Swipe Hint Badge for Mobile Users */}
+      {/* Touch Swipe Hint Badge */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-white/10 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/15 flex items-center gap-2 text-white/80 text-[11px] font-semibold pointer-events-none shadow-md">
         <Hand className="w-3.5 h-3.5 text-[#D72426] animate-pulse" />
-        <span>Смахните пальцем влево или вправо</span>
+        <span>Плавно смахните пальцем влево или вправо</span>
       </div>
 
       <div
